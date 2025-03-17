@@ -68,32 +68,32 @@ public class NeuralBlock {
 
         double fov = mcInstance.options.fov().get();
 
-        getBlockFromScreenPos(
-            mcInstance.level,
-            mcInstance.player,
-            new Vec2(-1f, 0f),
-            fov,
-            2*Math.atan(Math.tan(fov*DEG_TO_RAD/2)*mcWindow.getHeight()/mcWindow.getWidth())*RAD_TO_DEG, //https://github.com/themetalmuncher/fov-calc/blob/gh-pages/index.html#L22
-            MAX_RAYCAST_DISTANCE
-        );
+        // getBlockFromScreenPos(
+        //     mcInstance.level,
+        //     mcInstance.player,
+        //     new Vec2(-1f, 0f),
+        //     fov,
+        //     2*Math.atan(Math.tan(fov*DEG_TO_RAD/2)*mcWindow.getHeight()/mcWindow.getWidth())*RAD_TO_DEG, //https://github.com/themetalmuncher/fov-calc/blob/gh-pages/index.html#L22
+        //     MAX_RAYCAST_DISTANCE
+        // );
 
-        getBlockFromScreenPos(
-            mcInstance.level,
-            mcInstance.player,
-            new Vec2(0, 0),
-            fov,
-            2*Math.atan(Math.tan(fov*DEG_TO_RAD/2)*mcWindow.getHeight()/mcWindow.getWidth())*RAD_TO_DEG, //https://github.com/themetalmuncher/fov-calc/blob/gh-pages/index.html#L22
-            MAX_RAYCAST_DISTANCE
-        );
+        // getBlockFromScreenPos(
+        //     mcInstance.level,
+        //     mcInstance.player,
+        //     new Vec2(0, 0),
+        //     fov,
+        //     2*Math.atan(Math.tan(fov*DEG_TO_RAD/2)*mcWindow.getHeight()/mcWindow.getWidth())*RAD_TO_DEG, //https://github.com/themetalmuncher/fov-calc/blob/gh-pages/index.html#L22
+        //     MAX_RAYCAST_DISTANCE
+        // );
 
-        getBlockFromScreenPos(
-            mcInstance.level,
-            mcInstance.player,
-            new Vec2(1f, 0f),
-            fov,
-            2*Math.atan(Math.tan(fov*DEG_TO_RAD/2)*mcWindow.getHeight()/mcWindow.getWidth())*RAD_TO_DEG, //https://github.com/themetalmuncher/fov-calc/blob/gh-pages/index.html#L22
-            MAX_RAYCAST_DISTANCE
-        );
+        // getBlockFromScreenPos(
+        //     mcInstance.level,
+        //     mcInstance.player,
+        //     new Vec2(1f, 0f),
+        //     fov,
+        //     2*Math.atan(Math.tan(fov*DEG_TO_RAD/2)*mcWindow.getHeight()/mcWindow.getWidth())*RAD_TO_DEG, //https://github.com/themetalmuncher/fov-calc/blob/gh-pages/index.html#L22
+        //     MAX_RAYCAST_DISTANCE
+        // );
 
     }
 
@@ -102,19 +102,20 @@ public class NeuralBlock {
      * @param normalizedScreenCoords Vec2 with a range of [-1,1]
      */
     public static Block getBlockFromScreenPos(Level level, Player player, Vec2 normalizedScreenCoords, double fov_h, double fov_v, int maxDistance){
-        normalizedScreenCoords = normalizedScreenCoords.scale(0.5f);
-        Vec2 viewAngles = new Vec2(
-            player.getXRot() + (float)(normalizedScreenCoords.x * fov_h),
-            player.getYRot() + (float)(normalizedScreenCoords.y * fov_v)
+        Vec3 viewDirection = player.calculateViewVector(
+            player.getXRot() + (float)(normalizedScreenCoords.x * 0.5 * fov_h),
+            player.getYRot() //+ (float)(normalizedScreenCoords.y * 0.5 * fov_v)
         );
 
+        //Pitching the view direction does not take into account yRot at all, so we'll need to slerp to whatever direction yRot points to
+        //can't pitch the view angle here, we'll need to slerp the angle to whatever direction yRot points to
+        float yRotRad = player.getYRot() * DEG_TO_RAD;
+        Vec3 yRotDirection = new Vec3(Mth.sin(yRotRad), 0, Mth.cos(yRotRad));
+        viewDirection = Utils.slerp(viewDirection, yRotDirection, Mth.abs((float)viewDirection.x));
+
+
         Vec3 startPos = player.getEyePosition(1.0F);
-        Vec3 toPosDirection = new Vec3(
-            Mth.sin(-viewAngles.y * DEG_TO_RAD - Mth.PI) * -Mth.cos(-viewAngles.x * DEG_TO_RAD),
-            Mth.sin(-viewAngles.x * DEG_TO_RAD),
-            Mth.cos(-viewAngles.y * DEG_TO_RAD - Mth.PI) * -Mth.cos(-viewAngles.x * DEG_TO_RAD)
-        );
-        Vec3 toPos = startPos.add(toPosDirection.scale(maxDistance));
+        Vec3 toPos = startPos.add(viewDirection.scale(maxDistance));
 
         ClipContext clipContext = new ClipContext(startPos, toPos, ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, player);
         BlockHitResult hitResult = level.clip(clipContext);
