@@ -8,6 +8,7 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.logging.LogUtils;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.player.Player;
@@ -29,6 +30,7 @@ import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.config.ModConfig;
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
+import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 
@@ -41,8 +43,8 @@ public class NeuralBlock {
     private Minecraft mcInstance;
     private Window mcWindow;
 
-    private int ticks = 0;
-    private static final int TICKS_TO_WAIT = 40;
+    private long stopwatch = System.currentTimeMillis();
+    private static final int MS_TO_WAIT = 500;
     private static final int MAX_RAYCAST_DISTANCE = 64;
     private static final float DEG_TO_RAD = Mth.PI/180;
     private static final float RAD_TO_DEG = 180/Mth.PI;
@@ -57,16 +59,20 @@ public class NeuralBlock {
     }
 
     @SubscribeEvent
-    public void handleRenderFrame(PlayerTickEvent.Post event){
-        ticks++;
-        if(ticks % TICKS_TO_WAIT != 0){
+    public void handleRenderFrame(RenderLevelStageEvent event){
+        if(System.currentTimeMillis() - stopwatch < MS_TO_WAIT || mcInstance.player == null){
             return;
         }
-        if(mcInstance.player == null){
-            return;
-        }
+        stopwatch = System.currentTimeMillis();
 
-        double fov = mcInstance.options.fov().get();
+
+        Vec2 playerFov = new Vec2(
+            mcInstance.options.fov().get(),
+            (int)(2*Math.atan(Math.tan(mcInstance.options.fov().get()*DEG_TO_RAD/2)*mcWindow.getHeight()/mcWindow.getWidth())*RAD_TO_DEG) //https://github.com/themetalmuncher/fov-calc/blob/gh-pages/index.html#L22
+        );
+
+
+        getBlockFromScreenPos(mcInstance.level, mcInstance.player, new Vec2(0f, 0f), playerFov, MAX_RAYCAST_DISTANCE);
 
         // getBlockFromScreenPos(
         //     mcInstance.level,
@@ -77,45 +83,33 @@ public class NeuralBlock {
         //     MAX_RAYCAST_DISTANCE
         // );
 
-        // getBlockFromScreenPos(
-        //     mcInstance.level,
-        //     mcInstance.player,
-        //     new Vec2(0, 0),
-        //     fov,
-        //     2*Math.atan(Math.tan(fov*DEG_TO_RAD/2)*mcWindow.getHeight()/mcWindow.getWidth())*RAD_TO_DEG, //https://github.com/themetalmuncher/fov-calc/blob/gh-pages/index.html#L22
-        //     MAX_RAYCAST_DISTANCE
-        // );
-
-        // getBlockFromScreenPos(
-        //     mcInstance.level,
-        //     mcInstance.player,
-        //     new Vec2(1f, 0f),
-        //     fov,
-        //     2*Math.atan(Math.tan(fov*DEG_TO_RAD/2)*mcWindow.getHeight()/mcWindow.getWidth())*RAD_TO_DEG, //https://github.com/themetalmuncher/fov-calc/blob/gh-pages/index.html#L22
-        //     MAX_RAYCAST_DISTANCE
-        // );
-
     }
 
     /**
-     *
-     * @param normalizedScreenCoords Vec2 with a range of [-1,1]
+     * Returns a block at a given screen coordinate
+     * @param screenCoords Vec2 with a range of [-1,1], where 0,0 is the center of the screen. +x is right, +y is down.
+     * @param fov_2d Vec2 with x as horizontal FOV and y as vertical FOV. FOV cannot be > 180 degrees, supporting that would be stupid
      */
-    public static Block getBlockFromScreenPos(Level level, Player player, Vec2 normalizedScreenCoords, double fov_h, double fov_v, int maxDistance){
+    public static Block getBlockFromScreenPos(Level level, Player player, Vec2 screenCoords, Vec2 fov_2d, int maxDistance){
         Vec3 viewDirection = player.calculateViewVector(
-            player.getXRot() + (float)(normalizedScreenCoords.x * 0.5 * fov_h),
-            player.getYRot() //+ (float)(normalizedScreenCoords.y * 0.5 * fov_v)
-        );
+            player.getXRot(), // + (float)(screenCoords.x * 0.5 * fov_h),
+            player.getYRot() // + (float)(screenCoords.y * 0.5 * fov_v)
+        ); //already normalized
 
-        //Pitching the view direction does not take into account yRot at all, so we'll need to slerp to whatever direction yRot points to
-        //can't pitch the view angle here, we'll need to slerp the angle to whatever direction yRot points to
-        float yRotRad = player.getYRot() * DEG_TO_RAD;
-        Vec3 yRotDirection = new Vec3(Mth.sin(yRotRad), 0, Mth.cos(yRotRad));
-        viewDirection = Utils.slerp(viewDirection, yRotDirection, Mth.abs((float)viewDirection.x));
+        Vec3 viewLeftVector = player.calculateViewVector(0f, player.getYRot() - 90f).normalize();
+        Vec3 viewUpVector = viewDirection.cross(viewLeftVector).normalize();
 
+
+
+        Vec3 rayDirection = viewDirection
+            .add(viewLeftVector.scale((90 - (fov_2d.x/2 * screenCoords.x * -1))/90)) //left-right offset
+            .add(viewUpVector.scale((90 - (fov_2d.y/2 * screenCoords.y))/90)) //up-down offset
+            .normalize();
+
+        //todo: test if this is correct
 
         Vec3 startPos = player.getEyePosition(1.0F);
-        Vec3 toPos = startPos.add(viewDirection.scale(maxDistance));
+        Vec3 toPos = startPos.add(rayDirection.scale(maxDistance));
 
         ClipContext clipContext = new ClipContext(startPos, toPos, ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, player);
         BlockHitResult hitResult = level.clip(clipContext);
