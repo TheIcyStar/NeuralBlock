@@ -71,8 +71,10 @@ public class NeuralBlock {
             (int)(2*Math.atan(Math.tan(mcInstance.options.fov().get()*DEG_TO_RAD/2)*mcWindow.getHeight()/mcWindow.getWidth())*RAD_TO_DEG) //https://github.com/themetalmuncher/fov-calc/blob/gh-pages/index.html#L22
         );
 
-
+        LOGGER.info("====");
+        getBlockFromScreenPos(mcInstance.level, mcInstance.player, new Vec2(-1f, -1f), playerFov, MAX_RAYCAST_DISTANCE);
         getBlockFromScreenPos(mcInstance.level, mcInstance.player, new Vec2(0f, 0f), playerFov, MAX_RAYCAST_DISTANCE);
+        getBlockFromScreenPos(mcInstance.level, mcInstance.player, new Vec2(1f, 1f), playerFov, MAX_RAYCAST_DISTANCE);
 
         // getBlockFromScreenPos(
         //     mcInstance.level,
@@ -102,8 +104,8 @@ public class NeuralBlock {
 
 
         Vec3 rayDirection = viewDirection
-            .add(viewLeftVector.scale((90 - (fov_2d.x/2 * screenCoords.x * -1))/90)) //left-right offset
-            .add(viewUpVector.scale((90 - (fov_2d.y/2 * screenCoords.y))/90)) //up-down offset
+            .add(viewLeftVector.scale(1 - ((90 - (fov_2d.x/2 * screenCoords.x * -1))/90))) //left-right offset
+            .add(viewUpVector.scale(1 - ((90 - (fov_2d.y/2 * screenCoords.y * -1))/90))) //up-down offset
             .normalize();
 
         //todo: test if this is correct
@@ -115,7 +117,11 @@ public class NeuralBlock {
         BlockHitResult hitResult = level.clip(clipContext);
         BlockState blockState = level.getBlockState(hitResult.getBlockPos());
 
-        LOGGER.info("("+hitResult.getBlockPos()+"): "+BuiltInRegistries.BLOCK.getKey(blockState.getBlock()));
+        LOGGER.info(
+            "("+hitResult.getBlockPos()+"): "+BuiltInRegistries.BLOCK.getKey(blockState.getBlock())//+ "\n"+
+            // "rayDir: " + rayDirection.toString()+ "\n" +
+            // "lookDir: " + viewDirection.toString()
+        );
 
         return blockState.getBlock();
     }
