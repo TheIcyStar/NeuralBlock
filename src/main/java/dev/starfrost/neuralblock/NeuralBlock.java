@@ -15,7 +15,6 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec2;
@@ -42,7 +41,11 @@ public class NeuralBlock {
     private long stopwatch = System.currentTimeMillis();
     private static final int MS_TO_WAIT = 500;
     private static final int MAX_RAYCAST_DISTANCE = 64;
+
+    private static StringBuilder csvLineStringBuilder;
     private static File outputCSVFile;
+
+    private record RaycastResult(Vec3 hitPos, String blockResourceName) {}
 
 
     public NeuralBlock(IEventBus modEventBus, ModContainer modContainer) {
@@ -51,31 +54,55 @@ public class NeuralBlock {
         modContainer.registerConfig(ModConfig.Type.CLIENT, Config.SPEC);
         modContainer.registerExtensionPoint(IConfigScreenFactory.class, ConfigurationScreen::new);
         mcInstance = Minecraft.getInstance();
+        csvLineStringBuilder = new StringBuilder();
     }
 
     @SubscribeEvent
+    @SuppressWarnings("null") // I check for it and it still yells at me >:C
     public void handleRenderFrame(RenderLevelStageEvent event){
         if(System.currentTimeMillis() - stopwatch < MS_TO_WAIT || mcInstance.player == null){
             return;
         }
         stopwatch = System.currentTimeMillis();
 
+        csvLineStringBuilder.append(String.format( "%1$.2f,%2$.2f," , mcInstance.player.getXRot(), mcInstance.player.getYRot() % 90));
 
-        LOGGER.info("====");
-        getBlockFromScreenPos(mcInstance.level, mcInstance.player, new Vec2(-1f, -1f), MAX_RAYCAST_DISTANCE);
-        getBlockFromScreenPos(mcInstance.level, mcInstance.player, new Vec2(0f, 0f), MAX_RAYCAST_DISTANCE);
-        getBlockFromScreenPos(mcInstance.level, mcInstance.player, new Vec2(1f, 1f), MAX_RAYCAST_DISTANCE);
+        for(int y=0; y < Config.gridSizeY; y++){
+            for(int x=1; x <= Config.gridSizeX; x++){
+                int index = x + y*Config.gridSizeX;
+                Vec2 screenLocation = new Vec2( ((float)x / Config.gridSizeX)*2-1, ((float)(y+1) / Config.gridSizeY)*2-1 );
+                RaycastResult raycastResult = getBlockFromScreenPos(mcInstance.level, mcInstance.player, screenLocation, MAX_RAYCAST_DISTANCE);
+
+                csvLineStringBuilder.append(String.format(
+                    "%s,%.2f",
+                    raycastResult.blockResourceName,
+                    raycastResult.hitPos.distanceTo(mcInstance.player.position())
+                ));
+
+                if(index < Config.gridSizeX * Config.gridSizeY){
+                    csvLineStringBuilder.append(",");
+                } else {
+                    csvLineStringBuilder.append("\n");
+                }
+            }
+        }
+
+        try(FileWriter fw = new FileWriter(outputCSVFile, true)) {
+            fw.append(csvLineStringBuilder);
+        } catch (IOException ioex) {
+            LOGGER.error("Could not write block grid to CSV. Path:" + outputCSVFile.getAbsolutePath(), ioex);
+            throw new RuntimeException(ioex);
+        }
+
+        csvLineStringBuilder.setLength(0);
     }
 
     /**
      * Returns a block with a screen offset, assuming a 90 degree fov
      * @param screenCoords Vec2 with a range of [-1,1], where 0,0 is the center of the screen. +x is right, +y is down.
      */
-    public static Block getBlockFromScreenPos(Level level, Player player, Vec2 screenCoords, int maxDistance){
-        Vec3 viewDirection = player.calculateViewVector(
-            player.getXRot(), // + (float)(screenCoords.x * 0.5 * fov_h),
-            player.getYRot() // + (float)(screenCoords.y * 0.5 * fov_v)
-        ); //already normalized
+    public static RaycastResult getBlockFromScreenPos(Level level, Player player, Vec2 screenCoords, int maxDistance){
+        Vec3 viewDirection = player.calculateViewVector( player.getXRot(), player.getYRot() ); //already normalized
 
         Vec3 viewLeftVector = player.calculateViewVector(0f, player.getYRot() + 90f).normalize();
         Vec3 viewUpVector = viewDirection.cross(viewLeftVector).normalize();
@@ -92,13 +119,10 @@ public class NeuralBlock {
         BlockHitResult hitResult = level.clip(clipContext);
         BlockState blockState = level.getBlockState(hitResult.getBlockPos());
 
-        LOGGER.info(
-            "("+hitResult.getBlockPos()+"): "+BuiltInRegistries.BLOCK.getKey(blockState.getBlock())//+ "\n"+
-            // "rayDir: " + rayDirection.toString()+ "\n" +
-            // "lookDir: " + viewDirection.toString()
+        return new RaycastResult(
+            new Vec3(hitResult.getBlockPos().getX(), hitResult.getBlockPos().getY(), hitResult.getBlockPos().getZ()),
+            BuiltInRegistries.BLOCK.getKey(blockState.getBlock()).toString()
         );
-
-        return blockState.getBlock();
     }
 
     // Create the CSV on startup
@@ -114,17 +138,16 @@ public class NeuralBlock {
 
         try(FileWriter fw = new FileWriter(outputCSVFile)) {
             fw.append("xRot,yRot,");
-            for(int x=1; x <= Config.gridSizeX; x++){
-                for(int y=0; y < Config.gridSizeY; y++){
-                    int index = x + y*Config.gridSizeX;
+            for(int i=1; i <= Config.gridSizeX * Config.gridSizeY; i++){
+                fw.append("block_"+i+",block_"+i+"_dist");
 
-                    if(index < Config.gridSizeX * Config.gridSizeY){
-                        fw.append("block_"+index+",block_"+index+"_dist,");
-                    } else {
-                        fw.append("block_"+index+",block_"+index+"_dist\n");
-                    }
+                if(i < Config.gridSizeX * Config.gridSizeY){
+                    fw.append(",");
+                } else {
+                    fw.append("\n");
                 }
             }
+
         } catch (IOException ioex) {
             LOGGER.error("Could not write CSV at " + outputCSVFile.getAbsolutePath(), ioex);
             throw new RuntimeException(ioex);
@@ -134,11 +157,4 @@ public class NeuralBlock {
         LOGGER.info("Created new file at " + outputCSVFile.toPath());
         LOGGER.info(Config.csvPath);
     }
-
-    // Append data to the csv
-    public static void saveGrid(Vec2 playerRotations, String[] blockNames, int[] blockDistances) {
-
-    }
-
-
 }
