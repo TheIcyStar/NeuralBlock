@@ -1,5 +1,11 @@
 package dev.starfrost.neuralblock;
 
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.nio.file.Paths;
+import java.time.LocalDateTime;
+
 import org.slf4j.Logger;
 
 import com.mojang.logging.LogUtils;
@@ -14,17 +20,19 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
+import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.config.ModConfig;
-import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
+import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
+import net.neoforged.neoforge.client.gui.ConfigurationScreen;
+import net.neoforged.neoforge.client.gui.IConfigScreenFactory;
 import net.neoforged.neoforge.common.NeoForge;
 
-// The value here should match an entry in the META-INF/neoforge.mods.toml file
-@Mod(NeuralBlock.MODID)
+@Mod(value = NeuralBlock.MODID, dist = Dist.CLIENT) // TODO: make sure this mod does nothing on the server
 public class NeuralBlock {
     public static final String MODID = "neuralblock";
     private static final Logger LOGGER = LogUtils.getLogger();
@@ -34,12 +42,14 @@ public class NeuralBlock {
     private long stopwatch = System.currentTimeMillis();
     private static final int MS_TO_WAIT = 500;
     private static final int MAX_RAYCAST_DISTANCE = 64;
+    private static File outputCSVFile;
 
 
     public NeuralBlock(IEventBus modEventBus, ModContainer modContainer) {
-        modEventBus.addListener(this::commonSetup);
+        modEventBus.addListener(this::clientSetup);
         NeoForge.EVENT_BUS.register(this);
-        modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
+        modContainer.registerConfig(ModConfig.Type.CLIENT, Config.SPEC);
+        modContainer.registerExtensionPoint(IConfigScreenFactory.class, ConfigurationScreen::new);
         mcInstance = Minecraft.getInstance();
     }
 
@@ -91,8 +101,44 @@ public class NeuralBlock {
         return blockState.getBlock();
     }
 
+    // Create the CSV on startup
+    //TODO: Find some "level loaded" event and use that instead. (Changing the config after startup doesn't change grid size)
+    private void clientSetup(final FMLClientSetupEvent event) {
+        String outputFileName = "NeuralBlockGrids-" + LocalDateTime.now().toString().replace(":","-") + ".csv";
+        outputCSVFile = new File(Paths.get(Config.csvPath, outputFileName).toString());
 
-    private void commonSetup(final FMLCommonSetupEvent event) {
+        //Create parent directories;
+        if(!outputCSVFile.getParentFile().exists()){
+            outputCSVFile.getParentFile().mkdirs();
+        }
+
+        try(FileWriter fw = new FileWriter(outputCSVFile)) {
+            fw.append("xRot,yRot,");
+            for(int x=1; x <= Config.gridSizeX; x++){
+                for(int y=0; y < Config.gridSizeY; y++){
+                    int index = x + y*Config.gridSizeX;
+
+                    if(index < Config.gridSizeX * Config.gridSizeY){
+                        fw.append("block_"+index+",block_"+index+"_dist,");
+                    } else {
+                        fw.append("block_"+index+",block_"+index+"_dist\n");
+                    }
+                }
+            }
+        } catch (IOException ioex) {
+            LOGGER.error("Could not write CSV at " + outputCSVFile.getAbsolutePath(), ioex);
+            throw new RuntimeException(ioex);
+        }
+
+
+        LOGGER.info("Created new file at " + outputCSVFile.toPath());
+        LOGGER.info(Config.csvPath);
+    }
+
+    // Append data to the csv
+    public static void saveGrid(Vec2 playerRotations, String[] blockNames, int[] blockDistances) {
 
     }
+
+
 }
