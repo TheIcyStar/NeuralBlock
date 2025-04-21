@@ -39,7 +39,7 @@ public class NeuralBlock {
     private Minecraft mcInstance;
 
     private long stopwatch = System.currentTimeMillis();
-    private static final int MS_TO_WAIT = 500;
+    private static final int MS_TO_WAIT = 1000;
     private static final int MAX_RAYCAST_DISTANCE = 64;
 
     private static StringBuilder csvLineStringBuilder;
