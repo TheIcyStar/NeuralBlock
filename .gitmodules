@@ -1,0 +1,6 @@
+[submodule "nnModel/preprocessor"]
+	path = nnModel/preprocessor
+	url = git@github.com:avc6361/NeuralBlock-Preprocess.git
+[submodule "nnModel/training"]
+	path = nnModel/training
+	url = git@github.com:Qhwelah/NeuralBlock-NeuralNetPredictor.git
