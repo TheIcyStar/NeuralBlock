@@ -22,11 +22,11 @@ World generation is not yet available.
 5. Your dataset will be in `$USERHOME/Downloads/NeuralBlockCSVs`
 
 #### Dataset processing
-1. Navigate to the [preprocessor folder](nnModel/preprocessor)
+1. Navigate to the [preprocessor folder](nnModel/)
 2. Follow its README.md to combine multiple CSVs into one and to "downcast" all of the block types
 
 #### Model training
-1. Navigate to the [training folder](nnModel/training)
+1. Navigate to the [training folder](nnModel/)
 2. Use `NeuralNetPredictor.ipynb` to create the AI model. (For convinience, you can open the Jupyter Notebook in Google Colab)
 
 ## Acknowledgements
